@@ -218,7 +218,7 @@ for(int i = 0; i < 2; ++i)
 // as long as nHashRst remains held high.
 
 // Latency for this module is 123 cycles (one extra for the final XOR!) and throughput is one hash/clk.
-module FirstSkeinRound(output wire [1087:0] OutState, input wire clk, input wire nHashRst, input wire [639:0] InState, input wire [1087:0] InKey, input wire [63:0] InNonce);
+module FirstSkeinRound(output wire [1087:0] OutState, input wire clk, input wire [639:0] InState, input wire [1087:0] InKey, input wire [63:0] InNonce);
 	
 	parameter COREIDX = 0, HASHERS = 1;
 	
@@ -251,12 +251,9 @@ module FirstSkeinRound(output wire [1087:0] OutState, input wire clk, input wire
 
 	always @(posedge clk)
 	begin
-		if(nHashRst)
-		begin
-			IBuf[0] <= { 320'b0, CurNonce, InState };
-			KeyBuf <= InKey;
-		end
-		CurNonce <= (nHashRst) ? CurNonce + HASHERS : InNonce;
+		IBuf[0] <= { 320'b0, CurNonce, InState };
+		KeyBuf <= InKey;
+		CurNonce <= InNonce;
 		
 		for(i = 1; i < STAGES; i = i + 1)
 		begin : PIPECYCLELOOP
