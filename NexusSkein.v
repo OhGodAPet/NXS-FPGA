@@ -216,7 +216,7 @@ for(int i = 0; i < 2; ++i)
 // To use, put state on the InState wires, with InKey and InType set as well.
 // Bring DataValid high, and it will accept input on these wires once per clock
 // as long as DataValid remains held high.
-module FirstSkeinRound(output wire [1087:0] OutState, output reg OutputValid, input wire clk, input wire nHashRst, input wire [639:0] InState, input wire [1087:0] InKey, input wire [63:0] InNonce);
+(* shreg_extract = "yes" *) module FirstSkeinRound(output wire [1087:0] OutState, output reg OutputValid, input wire clk, input wire nHashRst, input wire [639:0] InState, input wire [1087:0] InKey, input wire [63:0] InNonce);
 	
 	parameter COREIDX = 0, HASHERS = 1;
 	
@@ -300,7 +300,7 @@ module FirstSkeinRound(output wire [1087:0] OutState, output reg OutputValid, in
 
 endmodule
 
-module SecondSkeinRound(output wire [1023:0] OutState, output wire OutputValid, input wire clk, input wire HashRst, input wire [1087:0] InKey);
+(* shreg_extract = "yes" *) module SecondSkeinRound(output wire [1023:0] OutState, output wire OutputValid, input wire clk, input wire HashRst, input wire [1087:0] InKey);
 
 	localparam ROUNDS = 20, KEYINJECTIONS = 21;
 	localparam STAGES = ROUNDS + KEYINJECTIONS, ROUNDSTAGES = 4, KEYSTAGES = 2;
@@ -312,7 +312,7 @@ module SecondSkeinRound(output wire [1023:0] OutState, output wire OutputValid, 
 	// Type[0] = 0x08, Type[1] = 0xFF00000000000000, Type[2] = 0xFF00000000000008
 	//reg [63:0] CurNonce;
 	reg [1023:0] IBuf[STAGES-1:0];
-	reg [1087:0] KeyBuf[KEYSTORAGE-1:0];
+	(* shreg_extract = "yes" *) reg [1087:0] KeyBuf[KEYSTORAGE-1:0];
 	reg [TOTALSTAGES-1:0] PipeOutputGood = 0;
 	
 	wire [1023:0] OBuf[STAGES-1:0];
