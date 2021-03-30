@@ -2,7 +2,7 @@
 
 `define IDX64(x)            ((x) << 6)+:64
 
-module NexusHashTransform(output reg [63:0] NonceOut, output reg GoodNonceFound, input clk, input nHashRst, input [1727:0] WorkPkt, input [63:0] InNonce);
+module NexusHashTransform(output reg [63:0] NonceOut, output reg GoodNonceFound, input wire clk, input wire nHashRst, input wire [1727:0] WorkPkt, input wire [63:0] InNonce);
 	
 	parameter HASHERS = 1, COREIDX = 0;
 	
@@ -50,10 +50,10 @@ module NexusHashTransform(output reg [63:0] NonceOut, output reg GoodNonceFound,
 			PipeOutputGood <= 0;
 			BlkHdrTail <= WorkPkt[639:0];
 			Midstate <= WorkPkt[1727:640];
-			CurNonce <= InNonce;
+			CurNonce <= InNonce + COREIDX;
 		end else
 		begin
-			CurNonce <= CurNonce + 1'b1;
+			CurNonce <= CurNonce + HASHERS;
 		end
 		
 		PipeOutputGood <= (PipeOutputGood << 1) | nHashRst;
