@@ -218,7 +218,7 @@ for(int i = 0; i < 2; ++i)
 // as long as nHashRst remains held high.
 
 // Latency for this module is 123 cycles (one extra for the final XOR!) and throughput is one hash/clk.
-module FirstSkeinRound(output wire [1087:0] OutState, output reg OutputValid, input wire clk, input wire nHashRst, input wire [639:0] InState, input wire [1087:0] InKey, input wire [63:0] InNonce);
+module FirstSkeinRound(output wire [1087:0] OutState, input wire clk, input wire nHashRst, input wire [639:0] InState, input wire [1087:0] InKey, input wire [63:0] InNonce);
 	
 	parameter COREIDX = 0, HASHERS = 1;
 	
@@ -237,20 +237,13 @@ module FirstSkeinRound(output wire [1087:0] OutState, output reg OutputValid, in
 	
 	localparam BLKSTAGES = (SKEINRNDSTAGES * SKEINROUNDS) + (SKEINKEYINJECTIONS * SKEINKEYSTAGES);
 	
-	// The last stage in our pipe consists of XOR with the
-	// input, increasing our total pipeline stages for this
-	// module by 1.
-	localparam TOTALSTAGES = BLKSTAGES;
-	
 	// Type[0] = 0xD8, Type[1] = 0xB000000000000000, Type[2] = 0xB0000000000000D8
 	reg [63:0] CurNonce;
 	(* shreg_extract = "yes" *) reg [1023:0] IBuf[STAGES-1:0];
 	reg [1023:0] OutXORBuf;
 	reg [1087:0] KeyBuf;
-	reg [TOTALSTAGES-1:0] PipeOutputGood = 0;
 	
 	wire [1023:0] OBuf[STAGES-1:0];
-	wire [1023:0] OBuf2[STAGES-1:0];
 	assign OutState[1023:0] = OutXORBuf;
 	assign OutState[1087:1024] = OutXORBuf[`IDX64(0)] ^ OutXORBuf[`IDX64(1)] ^ OutXORBuf[`IDX64(2)] ^ OutXORBuf[`IDX64(3)] ^ OutXORBuf[`IDX64(4)] ^ OutXORBuf[`IDX64(5)] ^ OutXORBuf[`IDX64(6)] ^ OutXORBuf[`IDX64(7)] ^ OutXORBuf[`IDX64(8)] ^ OutXORBuf[`IDX64(9)] ^ OutXORBuf[`IDX64(10)] ^ OutXORBuf[`IDX64(11)] ^ OutXORBuf[`IDX64(12)] ^ OutXORBuf[`IDX64(13)] ^ OutXORBuf[`IDX64(14)] ^ OutXORBuf[`IDX64(15)] ^ `SKEIN_KS_PARITY;
 	genvar x;
@@ -268,13 +261,9 @@ module FirstSkeinRound(output wire [1087:0] OutState, output reg OutputValid, in
 		for(i = 1; i < STAGES; i = i + 1)
 		begin : PIPECYCLELOOP
 			IBuf[i] <= OBuf[i - 1];
-		end
+		end		
 		
-		OutputValid <= PipeOutputGood[TOTALSTAGES-1];
-		
-		
-		OutXORBuf <= OBuf[STAGES-1] ^ { 320'b0, CurNonce - ((TOTALSTAGES * HASHERS) + COREIDX), InState };
-		PipeOutputGood <= (PipeOutputGood << 1) | (nHashRst);
+		OutXORBuf <= OBuf[STAGES-1] ^ { 320'b0, CurNonce - ((BLKSTAGES * HASHERS) + COREIDX), InState };
 	end
 
 	// Due to ROTR1088 not being truly circular, values greater than 16
@@ -315,7 +304,7 @@ module FirstSkeinRound(output wire [1087:0] OutState, output reg OutputValid, in
 
 endmodule
 
-module SecondSkeinRound(output wire [1023:0] OutState, output wire OutputValid, input wire clk, input wire HashRst, input wire [1087:0] InKey);
+module SecondSkeinRound(output wire [1023:0] OutState, input wire clk, input wire [1087:0] InKey);
 
 	// Every Skein round has four clock cycles of latency, and every
 	// Skein key injection has 2 clock cycles of latency
@@ -336,13 +325,10 @@ module SecondSkeinRound(output wire [1023:0] OutState, output wire OutputValid, 
 	// Type[0] = 0x08, Type[1] = 0xFF00000000000000, Type[2] = 0xFF00000000000008
 	(* shreg_extract = "yes" *) reg [1023:0] IBuf[STAGES-1:0];
 	(* shreg_extract = "yes" *) reg [1087:0] KeyBuf[BLKSTAGES-1:0];
-	reg [TOTALSTAGES-1:0] PipeOutputGood = 0;
-	
+		
 	wire [1023:0] OBuf[STAGES-1:0];
-	wire [1023:0] OBuf2[STAGES-1:0];
 	assign OutState[1023:0] = OBuf[STAGES-1];
-	assign OutputValid = PipeOutputGood[TOTALSTAGES-1];
-	
+		
 	integer i;
 
 	always @(posedge clk)
@@ -359,9 +345,7 @@ module SecondSkeinRound(output wire [1023:0] OutState, output wire OutputValid, 
 		for(i = STAGES; i < BLKSTAGES; i = i + 1)
 		begin : KEYCYCLELOOP
 			KeyBuf[i] <= KeyBuf[i - 1];
-		end
-		
-		PipeOutputGood <= (PipeOutputGood << 1) | HashRst;
+		end		
 	end
 	
 	SkeinInjectKeyNexusBlk1 #(.RNDNUM(0), .RNDNUM_MOD_3(0)) KeyInjection0(OBuf[0], clk, IBuf[0], KeyBuf[0]);

@@ -40,11 +40,9 @@ module NexusHash_tb;
 	reg PassedFirstRnd = 1'b0, PassedSkein = 1'b0;
 	
 	always #1 clk = ~clk;
-	wire [1087:0] Output1;
-	wire [1023:0] Output2;
-	wire [63:0] Output3;
-	wire FirstRoundValidSig, SecondRoundValidSig;
-	wire CompletedSig;
+	wire [1087:0] SkeinOutput0;
+	wire [1023:0] SkeinOutput1;
+	wire [63:0] KeccakOutputQword;
 			
     initial
 	begin
@@ -65,7 +63,6 @@ module NexusHash_tb;
         // Release reset
 		nHashRst <= 1'b1;
 		
-        //while(~CompletedSig) #2;
     end
     
     always @(posedge clk)
@@ -73,10 +70,10 @@ module NexusHash_tb;
 		PipeOutputGood <= (PipeOutputGood << 1) | nHashRst;
 		CurNonce <= CurNonce + 1'b1;
 		
-		if(CompletedSig)
+		if(PipeOutputGood[TOTALSTAGES-1])
 		begin
 			// Lazy target check - check for 32 bits of zero, and filter further on the miner side
-			if(Output3[63:32] == 32'b0)
+			if(KeccakOutputQword[63:32] == 32'b0)
 			begin
 				$display("NEXUS FOUND NONCE 0x%h\n", CurNonce - 390);
 				$display("NEXUS PASS.");
@@ -85,7 +82,7 @@ module NexusHash_tb;
 		end
 	end
 	
-	FirstSkeinRound Block1ProcessTest(Output1, FirstRoundValidSig, clk, nHashRst, TestInput[639:0], TestKey, CurNonce);
-	SecondSkeinRound Block2ProcessTest(Output2, SecondRoundValidSig, clk, FirstRoundValidSig, Output1);
-	NexusKeccak1024 KeccakProcessTest(Output3, CompletedSig, clk, SecondRoundValidSig, Output2);
+	FirstSkeinRound Block1ProcessTest(SkeinOutput0, clk, nHashRst, TestInput[639:0], TestKey, CurNonce);
+	SecondSkeinRound Block2ProcessTest(SkeinOutput1, clk, SkeinOutput0);
+	NexusKeccak1024 KeccakProcessTest(KeccakOutputQword, clk, SkeinOutput1);
 endmodule

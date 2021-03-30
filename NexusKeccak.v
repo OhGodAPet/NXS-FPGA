@@ -6,7 +6,7 @@
 `define IDX64(x)			((x) << 6)+:64
 `define ROTL64(x, y)		{x[63 - y : 0], x[63: 63 - y + 1]}
 
-module NexusKeccak1024(output wire [63:0] OutState, output wire Done, input wire clk, input wire nHashRst, input wire [1023:0] InState);
+module NexusKeccak1024(output wire [63:0] OutState, input wire clk, input wire [1023:0] InState);
 
 	parameter HASHERS = 1;
 	parameter COREIDX = 0;
@@ -26,9 +26,9 @@ module NexusKeccak1024(output wire [63:0] OutState, output wire Done, input wire
 	wire [1599:0] OBuf[TOTALSTAGES-1:0];
 	wire Transform0Complete;
 	
-	reg [TOTALSTAGES-1:0] PipeOutputGood = 0;
+	//reg [TOTALSTAGES-1:0] PipeOutputGood = 0;
 	assign OutState = OBuf[TOTALSTAGES-1][`IDX64(6)];
-	assign Done = PipeOutputGood[TOTALSTAGES-1];
+	//assign Done = PipeOutputGood[TOTALSTAGES-1];
 	integer x;
 	
 	always @(posedge clk)
@@ -44,7 +44,7 @@ module NexusKeccak1024(output wire [63:0] OutState, output wire Done, input wire
 		SecondRoundInput[0] <= InState[1023:576];
 				
 		// As long as we have work (nonces to try), the stage has valid data
-		PipeOutputGood <= (PipeOutputGood << 1) | nHashRst;
+		//PipeOutputGood <= (PipeOutputGood << 1) | nHashRst;
 		
 		// Cycle pipeline
 		for(x = 1; x < STAGES; x = x + 1)
