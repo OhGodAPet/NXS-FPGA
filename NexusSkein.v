@@ -214,21 +214,37 @@ for(int i = 0; i < 2; ++i)
 // The result of the XOR becomes the new key, with the last key 64-bit word being derived as usual with Skein.
 
 // To use, put state on the InState wires, with InKey and InType set as well.
-// Bring DataValid high, and it will accept input on these wires once per clock
-// as long as DataValid remains held high.
-(* shreg_extract = "yes" *) module FirstSkeinRound(output wire [1087:0] OutState, output reg OutputValid, input wire clk, input wire nHashRst, input wire [639:0] InState, input wire [1087:0] InKey, input wire [63:0] InNonce);
+// Bring nHashRst high, and it will accept input on these wires once per clock
+// as long as nHashRst remains held high.
+
+// Latency for this module is 123 cycles (one extra for the final XOR!) and throughput is one hash/clk.
+module FirstSkeinRound(output wire [1087:0] OutState, output reg OutputValid, input wire clk, input wire nHashRst, input wire [639:0] InState, input wire [1087:0] InKey, input wire [63:0] InNonce);
 	
 	parameter COREIDX = 0, HASHERS = 1;
 	
-	localparam ROUNDS = 20, KEYINJECTIONS = 21;
-	localparam STAGES = ROUNDS + KEYINJECTIONS, ROUNDSTAGES = 4, KEYSTAGES = 2;
+	// Every Skein round has four clock cycles of latency, and every
+	// Skein key injection has 2 clock cycles of latency
+	localparam SKEINRNDSTAGES = 4, SKEINKEYSTAGES = 2;
 	
-	localparam BLKSTAGES = (ROUNDSTAGES * ROUNDS) + (KEYINJECTIONS * KEYSTAGES);
+	// 20 rounds, with 21 key injections per block process
+	localparam SKEINROUNDS = 20, SKEINKEYINJECTIONS = 21;
+	
+	// 20 rounds, 4 clock cycles of latency per round, and 21 key
+	// injections, 2 clock cycles of latency per key injection
+	localparam SKEINBLKSTAGES = (SKEINRNDSTAGES * SKEINROUNDS) + (SKEINKEYINJECTIONS * SKEINKEYSTAGES);
+	
+	localparam STAGES = SKEINROUNDS + SKEINKEYINJECTIONS;
+	
+	localparam BLKSTAGES = (SKEINRNDSTAGES * SKEINROUNDS) + (SKEINKEYINJECTIONS * SKEINKEYSTAGES);
+	
+	// The last stage in our pipe consists of XOR with the
+	// input, increasing our total pipeline stages for this
+	// module by 1.
 	localparam TOTALSTAGES = BLKSTAGES;
 	
 	// Type[0] = 0xD8, Type[1] = 0xB000000000000000, Type[2] = 0xB0000000000000D8
 	reg [63:0] CurNonce;
-	reg [1023:0] IBuf[STAGES-1:0];
+	(* shreg_extract = "yes" *) reg [1023:0] IBuf[STAGES-1:0];
 	reg [1023:0] OutXORBuf;
 	reg [1087:0] KeyBuf;
 	reg [TOTALSTAGES-1:0] PipeOutputGood = 0;
@@ -252,7 +268,6 @@ for(int i = 0; i < 2; ++i)
 		for(i = 1; i < STAGES; i = i + 1)
 		begin : PIPECYCLELOOP
 			IBuf[i] <= OBuf[i - 1];
-			//KeyBuf[i] <= KeyBuf[i - 1];
 		end
 		
 		OutputValid <= PipeOutputGood[TOTALSTAGES-1];
@@ -300,19 +315,27 @@ for(int i = 0; i < 2; ++i)
 
 endmodule
 
-(* shreg_extract = "yes" *) module SecondSkeinRound(output wire [1023:0] OutState, output wire OutputValid, input wire clk, input wire HashRst, input wire [1087:0] InKey);
+module SecondSkeinRound(output wire [1023:0] OutState, output wire OutputValid, input wire clk, input wire HashRst, input wire [1087:0] InKey);
 
-	localparam ROUNDS = 20, KEYINJECTIONS = 21;
-	localparam STAGES = ROUNDS + KEYINJECTIONS, ROUNDSTAGES = 4, KEYSTAGES = 2;
+	// Every Skein round has four clock cycles of latency, and every
+	// Skein key injection has 2 clock cycles of latency
+	localparam SKEINRNDSTAGES = 4, SKEINKEYSTAGES = 2;
 	
-	localparam BLKSTAGES = (ROUNDSTAGES * ROUNDS) + (KEYINJECTIONS * KEYSTAGES);
+	// 20 rounds, with 21 key injections per block process
+	localparam SKEINROUNDS = 20, SKEINKEYINJECTIONS = 21;
+	
+	// 20 rounds, 4 clock cycles of latency per round, and 21 key
+	// injections, 2 clock cycles of latency per key injection
+	localparam SKEINBLKSTAGES = (SKEINRNDSTAGES * SKEINROUNDS) + (SKEINKEYINJECTIONS * SKEINKEYSTAGES);
+	
+	localparam STAGES = SKEINROUNDS + SKEINKEYINJECTIONS;
+	
+	localparam BLKSTAGES = (SKEINRNDSTAGES * SKEINROUNDS) + (SKEINKEYINJECTIONS * SKEINKEYSTAGES);
 	localparam TOTALSTAGES = BLKSTAGES;
-	localparam KEYSTORAGE = (ROUNDSTAGES + KEYSTAGES) * ROUNDS + 1;
-	
+		
 	// Type[0] = 0x08, Type[1] = 0xFF00000000000000, Type[2] = 0xFF00000000000008
-	//reg [63:0] CurNonce;
-	reg [1023:0] IBuf[STAGES-1:0];
-	(* shreg_extract = "yes" *) reg [1087:0] KeyBuf[KEYSTORAGE-1:0];
+	(* shreg_extract = "yes" *) reg [1023:0] IBuf[STAGES-1:0];
+	(* shreg_extract = "yes" *) reg [1087:0] KeyBuf[BLKSTAGES-1:0];
 	reg [TOTALSTAGES-1:0] PipeOutputGood = 0;
 	
 	wire [1023:0] OBuf[STAGES-1:0];
@@ -320,18 +343,12 @@ endmodule
 	assign OutState[1023:0] = OBuf[STAGES-1];
 	assign OutputValid = PipeOutputGood[TOTALSTAGES-1];
 	
-	genvar x;
 	integer i;
 
 	always @(posedge clk)
 	begin
-		if(HashRst)
-		begin
-			IBuf[0] <= 1024'b0;
-			KeyBuf[0] <= InKey;
-		end
-
-		//CurNonce <= (nHashRst) ? CurNonce + 1'b1 : InNonce;
+		IBuf[0] <= 1024'b0;
+		KeyBuf[0] <= InKey;
 		
 		for(i = 1; i < STAGES; i = i + 1)
 		begin : PIPECYCLELOOP
@@ -339,7 +356,7 @@ endmodule
 			KeyBuf[i] <= KeyBuf[i - 1];
 		end
 
-		for(i = STAGES; i < KEYSTORAGE; i = i + 1)
+		for(i = STAGES; i < BLKSTAGES; i = i + 1)
 		begin : KEYCYCLELOOP
 			KeyBuf[i] <= KeyBuf[i - 1];
 		end
@@ -350,63 +367,63 @@ endmodule
 	SkeinInjectKeyNexusBlk1 #(.RNDNUM(0), .RNDNUM_MOD_3(0)) KeyInjection0(OBuf[0], clk, IBuf[0], KeyBuf[0]);
 	SkeinEvenRound EvenRound0(OBuf[1], clk, IBuf[1]);
 
-	SkeinInjectKeyNexusBlk1 #(.RNDNUM(1), .RNDNUM_MOD_3(1)) KeyInjection1(OBuf[2], clk, IBuf[2], `ROTR1088(KeyBuf[(ROUNDSTAGES + KEYSTAGES) * 1], 64));
+	SkeinInjectKeyNexusBlk1 #(.RNDNUM(1), .RNDNUM_MOD_3(1)) KeyInjection1(OBuf[2], clk, IBuf[2], `ROTR1088(KeyBuf[(SKEINRNDSTAGES + SKEINKEYSTAGES) * 1], 64));
 	SkeinOddRound OddRound1(OBuf[3], clk, IBuf[3]);
 
-	SkeinInjectKeyNexusBlk1 #(.RNDNUM(2), .RNDNUM_MOD_3(2)) KeyInjection2(OBuf[4], clk, IBuf[4], `ROTR1088(KeyBuf[(ROUNDSTAGES + KEYSTAGES) * 2], 128));
+	SkeinInjectKeyNexusBlk1 #(.RNDNUM(2), .RNDNUM_MOD_3(2)) KeyInjection2(OBuf[4], clk, IBuf[4], `ROTR1088(KeyBuf[(SKEINRNDSTAGES + SKEINKEYSTAGES) * 2], 128));
 	SkeinEvenRound EvenRound2(OBuf[5], clk, IBuf[5]);
 
-	SkeinInjectKeyNexusBlk1 #(.RNDNUM(3), .RNDNUM_MOD_3(0)) KeyInjection3(OBuf[6], clk, IBuf[6], `ROTR1088(KeyBuf[(ROUNDSTAGES + KEYSTAGES) * 3], 192));
+	SkeinInjectKeyNexusBlk1 #(.RNDNUM(3), .RNDNUM_MOD_3(0)) KeyInjection3(OBuf[6], clk, IBuf[6], `ROTR1088(KeyBuf[(SKEINRNDSTAGES + SKEINKEYSTAGES) * 3], 192));
 	SkeinOddRound OddRound3(OBuf[7], clk, IBuf[7]);
 
-	SkeinInjectKeyNexusBlk1 #(.RNDNUM(4), .RNDNUM_MOD_3(1)) KeyInjection4(OBuf[8], clk, IBuf[8], `ROTR1088(KeyBuf[(ROUNDSTAGES + KEYSTAGES) * 4], 256));
+	SkeinInjectKeyNexusBlk1 #(.RNDNUM(4), .RNDNUM_MOD_3(1)) KeyInjection4(OBuf[8], clk, IBuf[8], `ROTR1088(KeyBuf[(SKEINRNDSTAGES + SKEINKEYSTAGES) * 4], 256));
 	SkeinEvenRound EvenRound4(OBuf[9], clk, IBuf[9]);
 
-	SkeinInjectKeyNexusBlk1 #(.RNDNUM(5), .RNDNUM_MOD_3(2)) KeyInjection5(OBuf[10], clk, IBuf[10], `ROTR1088(KeyBuf[(ROUNDSTAGES + KEYSTAGES) * 5], 320));
+	SkeinInjectKeyNexusBlk1 #(.RNDNUM(5), .RNDNUM_MOD_3(2)) KeyInjection5(OBuf[10], clk, IBuf[10], `ROTR1088(KeyBuf[(SKEINRNDSTAGES + SKEINKEYSTAGES) * 5], 320));
 	SkeinOddRound OddRound5(OBuf[11], clk, IBuf[11]);
 	
-	SkeinInjectKeyNexusBlk1 #(.RNDNUM(6), .RNDNUM_MOD_3(0)) KeyInjection6(OBuf[12], clk, IBuf[12], `ROTR1088(KeyBuf[(ROUNDSTAGES + KEYSTAGES) * 6], 384));
+	SkeinInjectKeyNexusBlk1 #(.RNDNUM(6), .RNDNUM_MOD_3(0)) KeyInjection6(OBuf[12], clk, IBuf[12], `ROTR1088(KeyBuf[(SKEINRNDSTAGES + SKEINKEYSTAGES) * 6], 384));
 	SkeinEvenRound EvenRound6(OBuf[13], clk, IBuf[13]);
 
-	SkeinInjectKeyNexusBlk1 #(.RNDNUM(7), .RNDNUM_MOD_3(1)) KeyInjection7(OBuf[14], clk, IBuf[14], `ROTR1088(KeyBuf[(ROUNDSTAGES + KEYSTAGES) * 7], 448));
+	SkeinInjectKeyNexusBlk1 #(.RNDNUM(7), .RNDNUM_MOD_3(1)) KeyInjection7(OBuf[14], clk, IBuf[14], `ROTR1088(KeyBuf[(SKEINRNDSTAGES + SKEINKEYSTAGES) * 7], 448));
 	SkeinOddRound OddRound7(OBuf[15], clk, IBuf[15]);
 
-	SkeinInjectKeyNexusBlk1 #(.RNDNUM(8), .RNDNUM_MOD_3(2)) KeyInjection8(OBuf[16], clk, IBuf[16], `ROTR1088(KeyBuf[(ROUNDSTAGES + KEYSTAGES) * 8], 512));
+	SkeinInjectKeyNexusBlk1 #(.RNDNUM(8), .RNDNUM_MOD_3(2)) KeyInjection8(OBuf[16], clk, IBuf[16], `ROTR1088(KeyBuf[(SKEINRNDSTAGES + SKEINKEYSTAGES) * 8], 512));
 	SkeinEvenRound EvenRound8(OBuf[17], clk, IBuf[17]);
 
-	SkeinInjectKeyNexusBlk1 #(.RNDNUM(9), .RNDNUM_MOD_3(0)) KeyInjection9(OBuf[18], clk, IBuf[18], `ROTR1088(KeyBuf[(ROUNDSTAGES + KEYSTAGES) * 9], 576));
+	SkeinInjectKeyNexusBlk1 #(.RNDNUM(9), .RNDNUM_MOD_3(0)) KeyInjection9(OBuf[18], clk, IBuf[18], `ROTR1088(KeyBuf[(SKEINRNDSTAGES + SKEINKEYSTAGES) * 9], 576));
 	SkeinOddRound OddRound9(OBuf[19], clk, IBuf[19]);
 
-	SkeinInjectKeyNexusBlk1 #(.RNDNUM(10), .RNDNUM_MOD_3(1)) KeyInjection10(OBuf[20], clk, IBuf[20], `ROTR1088(KeyBuf[(ROUNDSTAGES + KEYSTAGES) * 10], 640));
+	SkeinInjectKeyNexusBlk1 #(.RNDNUM(10), .RNDNUM_MOD_3(1)) KeyInjection10(OBuf[20], clk, IBuf[20], `ROTR1088(KeyBuf[(SKEINRNDSTAGES + SKEINKEYSTAGES) * 10], 640));
 	SkeinEvenRound EvenRound10(OBuf[21], clk, IBuf[21]);
 
-	SkeinInjectKeyNexusBlk1 #(.RNDNUM(11), .RNDNUM_MOD_3(2)) KeyInjection11(OBuf[22], clk, IBuf[22], `ROTR1088(KeyBuf[(ROUNDSTAGES + KEYSTAGES) * 11], 704));
+	SkeinInjectKeyNexusBlk1 #(.RNDNUM(11), .RNDNUM_MOD_3(2)) KeyInjection11(OBuf[22], clk, IBuf[22], `ROTR1088(KeyBuf[(SKEINRNDSTAGES + SKEINKEYSTAGES) * 11], 704));
 	SkeinOddRound OddRound11(OBuf[23], clk, IBuf[23]);
 
-	SkeinInjectKeyNexusBlk1 #(.RNDNUM(12), .RNDNUM_MOD_3(0)) KeyInjection12(OBuf[24], clk, IBuf[24], `ROTR1088(KeyBuf[(ROUNDSTAGES + KEYSTAGES) * 12], 768));
+	SkeinInjectKeyNexusBlk1 #(.RNDNUM(12), .RNDNUM_MOD_3(0)) KeyInjection12(OBuf[24], clk, IBuf[24], `ROTR1088(KeyBuf[(SKEINRNDSTAGES + SKEINKEYSTAGES) * 12], 768));
 	SkeinEvenRound EvenRound12(OBuf[25], clk, IBuf[25]);
 
-	SkeinInjectKeyNexusBlk1 #(.RNDNUM(13), .RNDNUM_MOD_3(1)) KeyInjection13(OBuf[26], clk, IBuf[26], `ROTR1088(KeyBuf[(ROUNDSTAGES + KEYSTAGES) * 13], 832));
+	SkeinInjectKeyNexusBlk1 #(.RNDNUM(13), .RNDNUM_MOD_3(1)) KeyInjection13(OBuf[26], clk, IBuf[26], `ROTR1088(KeyBuf[(SKEINRNDSTAGES + SKEINKEYSTAGES) * 13], 832));
 	SkeinOddRound OddRound13(OBuf[27], clk, IBuf[27]);
 
-	SkeinInjectKeyNexusBlk1 #(.RNDNUM(14), .RNDNUM_MOD_3(2)) KeyInjection14(OBuf[28], clk, IBuf[28], `ROTR1088(KeyBuf[(ROUNDSTAGES + KEYSTAGES) * 14], 896));
+	SkeinInjectKeyNexusBlk1 #(.RNDNUM(14), .RNDNUM_MOD_3(2)) KeyInjection14(OBuf[28], clk, IBuf[28], `ROTR1088(KeyBuf[(SKEINRNDSTAGES + SKEINKEYSTAGES) * 14], 896));
 	SkeinEvenRound EvenRound14(OBuf[29], clk, IBuf[29]);
 
-	SkeinInjectKeyNexusBlk1 #(.RNDNUM(15), .RNDNUM_MOD_3(0)) KeyInjection15(OBuf[30], clk, IBuf[30], `ROTR1088(KeyBuf[(ROUNDSTAGES + KEYSTAGES) * 15], 960));
+	SkeinInjectKeyNexusBlk1 #(.RNDNUM(15), .RNDNUM_MOD_3(0)) KeyInjection15(OBuf[30], clk, IBuf[30], `ROTR1088(KeyBuf[(SKEINRNDSTAGES + SKEINKEYSTAGES) * 15], 960));
 	SkeinOddRound OddRound15(OBuf[31], clk, IBuf[31]);
 
-	SkeinInjectKeyNexusBlk1 #(.RNDNUM(16), .RNDNUM_MOD_3(1)) KeyInjection16(OBuf[32], clk, IBuf[32], `ROTR1088(KeyBuf[(ROUNDSTAGES + KEYSTAGES) * 16], 1024));
+	SkeinInjectKeyNexusBlk1 #(.RNDNUM(16), .RNDNUM_MOD_3(1)) KeyInjection16(OBuf[32], clk, IBuf[32], `ROTR1088(KeyBuf[(SKEINRNDSTAGES + SKEINKEYSTAGES) * 16], 1024));
 	SkeinEvenRound EvenRound16(OBuf[33], clk, IBuf[33]);
 	
 	// Key rotation for this round is a no-op.
-	SkeinInjectKeyNexusBlk1 #(.RNDNUM(17), .RNDNUM_MOD_3(2)) KeyInjection17(OBuf[34], clk, IBuf[34], KeyBuf[(ROUNDSTAGES + KEYSTAGES) * 17]);
+	SkeinInjectKeyNexusBlk1 #(.RNDNUM(17), .RNDNUM_MOD_3(2)) KeyInjection17(OBuf[34], clk, IBuf[34], KeyBuf[(SKEINRNDSTAGES + SKEINKEYSTAGES) * 17]);
 	SkeinOddRound OddRound17(OBuf[35], clk, IBuf[35]);
 	
-	SkeinInjectKeyNexusBlk1 #(.RNDNUM(18), .RNDNUM_MOD_3(0)) KeyInjection18(OBuf[36], clk, IBuf[36], `ROTR1088(KeyBuf[(ROUNDSTAGES + KEYSTAGES) * 18], 64));
+	SkeinInjectKeyNexusBlk1 #(.RNDNUM(18), .RNDNUM_MOD_3(0)) KeyInjection18(OBuf[36], clk, IBuf[36], `ROTR1088(KeyBuf[(SKEINRNDSTAGES + SKEINKEYSTAGES) * 18], 64));
 	SkeinEvenRound EvenRound18(OBuf[37], clk, IBuf[37]);
 
-	SkeinInjectKeyNexusBlk1 #(.RNDNUM(19), .RNDNUM_MOD_3(1)) KeyInjection19(OBuf[38], clk, IBuf[38], `ROTR1088(KeyBuf[(ROUNDSTAGES + KEYSTAGES) * 19], 128));
+	SkeinInjectKeyNexusBlk1 #(.RNDNUM(19), .RNDNUM_MOD_3(1)) KeyInjection19(OBuf[38], clk, IBuf[38], `ROTR1088(KeyBuf[(SKEINRNDSTAGES + SKEINKEYSTAGES) * 19], 128));
 	SkeinOddRound OddRound19(OBuf[39], clk, IBuf[39]);
 	
-	SkeinInjectKeyNexusBlk1 #(.RNDNUM(20), .RNDNUM_MOD_3(2)) KeyInjection20(OBuf[40], clk, IBuf[40], `ROTR1088(KeyBuf[(ROUNDSTAGES + KEYSTAGES) * 20], 192));
+	SkeinInjectKeyNexusBlk1 #(.RNDNUM(20), .RNDNUM_MOD_3(2)) KeyInjection20(OBuf[40], clk, IBuf[40], `ROTR1088(KeyBuf[(SKEINRNDSTAGES + SKEINKEYSTAGES) * 20], 192));
 endmodule

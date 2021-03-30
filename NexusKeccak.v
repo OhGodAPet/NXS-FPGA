@@ -39,7 +39,7 @@ module NexusKeccak1024(output wire [63:0] OutState, output wire Done, input wire
 		//	WorkExhausted <= 1'b0;
 		//	PipeOutputGood[STAGES-1:0] = 0;
 		//end
-		IBuf[STAGES] <= { OBuf[STAGES-1][1599:576], OBuf[STAGES-1][575:0] ^ { 64'h8000000000000000, 64'h05, SecondRoundInput[STAGES-1] } };
+		
 		IBuf[0] <= { 1024'b0, InState[575:0] };
 		SecondRoundInput[0] <= InState[1023:576];
 				
@@ -60,6 +60,10 @@ module NexusKeccak1024(output wire [63:0] OutState, output wire Done, input wire
 		begin : DataMoveLoop2
 			IBuf[x] <= OBuf[x - 1];
 		end
+		
+		// Handle transition of OBuf[STAGES-1] to IBuf[STAGES], mixing
+		// in 448 bits (56 bytes) of input, and the constants...
+		IBuf[STAGES] <= { OBuf[STAGES-1][1599:576], OBuf[STAGES-1][575:0] ^ { 64'h8000000000000000, 64'h05, SecondRoundInput[STAGES-1] } };
 	end
 
 	// Keccakf-1600 iteration 0
