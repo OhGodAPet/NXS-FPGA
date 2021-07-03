@@ -5,21 +5,9 @@
 // Testbench for the Skein block process implementation
 module NexusHash_tb;
 	// Every Skein round has four clock cycles of latency, and every
-	// Skein key injection has 2 clock cycles of latency. If using the
-	// pipe stage for QoR, each Skein round has five clock cycles of latency.
-	// If using combinatorial key injections, each key stage has one cycle
-	// of latency.
-	`ifdef QOR_PIPE_STAGE
-	localparam SKEINRNDSTAGES = 5;
-	`else
-	localparam SKEINRNDSTAGES = 4;
-	`endif
-	
-	`ifdef COMBINATORIAL_KEY_INJ
-	localparam SKEINKEYSTAGES = 1;
-	`else
+	// Skein key injection has 2 clock cycles of latency.
+	localparam SKEINRNDSTAGES = 4;	
 	localparam SKEINKEYSTAGES = 2;
-	`endif
 	
 	// Every Keccak round has two clock cycles of latency,
 	// and there are 24 rounds
@@ -89,7 +77,7 @@ module NexusHash_tb;
 			// Lazy target check - check for 32 bits of zero, and filter further on the miner side
 			if(KeccakOutputQword[63:32] == 32'b0)
 			begin
-				$display("NEXUS FOUND NONCE 0x%h\n", CurNonce - 390);
+				$display("NEXUS FOUND NONCE 0x%h\n", CurNonce - TOTALSTAGES);
 				$display("NEXUS PASS.");
 				$finish;
 			end else

@@ -8,9 +8,6 @@
 
 module NexusKeccak1024(output wire [63:0] OutState, input wire clk, input wire [1023:0] InState);
 
-	parameter HASHERS = 1;
-	parameter COREIDX = 0;
-	
 	// Every round has two clock cycles of latency,
 	// and there are 24 rounds per block process.
 	localparam KECCAKRNDSTAGES = 2, KECCAKROUNDS = 24;
@@ -19,17 +16,12 @@ module NexusKeccak1024(output wire [63:0] OutState, input wire clk, input wire [
 	// Three block processes are needed; as such,
 	// the pipe stages for this module is given by
 	// KECCAKBLKSTAGES * 3, or 144 clock cycles.
-	localparam STAGES = 48, IDLE = 1'b0, MINING = 1'b1;
-	localparam TOTALSTAGES = (STAGES * 3);
-
-	reg [31:0] CurNonce;
-	reg CurState = IDLE;
-	reg [575:0] CurWorkBlk;
-	reg [447:0] SecondRoundInput[STAGES-1:0];
+	localparam TOTALSTAGES = (KECCAKBLKSTAGES * 3);
+	
+	reg [447:0] SecondRoundInput[KECCAKBLKSTAGES-1:0];
 	reg [1599:0] IBuf[TOTALSTAGES-1:0];
 	wire [1599:0] OBuf[TOTALSTAGES-1:0];
-	wire Transform0Complete;
-	
+		
 	assign OutState = OBuf[TOTALSTAGES-1][`IDX64(6)];
 	integer x;
 	
@@ -39,23 +31,23 @@ module NexusKeccak1024(output wire [63:0] OutState, input wire clk, input wire [
 		SecondRoundInput[0] <= InState[1023:576];
 		
 		// Cycle pipeline
-		for(x = 1; x < STAGES; x = x + 1)
+		for(x = 1; x < KECCAKBLKSTAGES; x = x + 1)
 		begin : DataMoveLoop
 			IBuf[x] <= OBuf[x - 1];
 			SecondRoundInput[x] <= SecondRoundInput[x - 1];
 		end
 
-		// Do NOT cycle OBuf[STAGES-1] to IBuf[STAGES] - this is
-		// the transition that requires an XOR with the second
+		// Do NOT cycle OBuf[KECCAKBLKSTAGES-1] to IBuf[KECCAKBLKSTAGES]!
+		// This is the transition that requires an XOR with the second
 		// round input data.
-		for(x = STAGES + 1; x < TOTALSTAGES; x = x + 1)
+		for(x = KECCAKBLKSTAGES + 1; x < TOTALSTAGES; x = x + 1)
 		begin : DataMoveLoop2
 			IBuf[x] <= OBuf[x - 1];
 		end
 		
-		// Handle transition of OBuf[STAGES-1] to IBuf[STAGES], mixing
-		// in 448 bits (56 bytes) of input, and the constants...
-		IBuf[STAGES] <= { OBuf[STAGES-1][1599:576], OBuf[STAGES-1][575:0] ^ { 64'h8000000000000000, 64'h05, SecondRoundInput[STAGES-1] } };
+		// Handle transition of OBuf[KECCAKBLKSTAGES-1] to IBuf[KECCAKBLKSTAGES],
+		// mixing in 448 bits (56 bytes) of input, and the constants...
+		IBuf[KECCAKBLKSTAGES] <= { OBuf[KECCAKBLKSTAGES-1][1599:576], OBuf[KECCAKBLKSTAGES-1][575:0] ^ { 64'h8000000000000000, 64'h05, SecondRoundInput[KECCAKBLKSTAGES-1] } };
 	end
 
 	// Keccakf-1600 iteration 0
@@ -231,7 +223,6 @@ module KeccakF1600Perm0(output wire [1599:0] OutState, input wire [1599:0] InSta
 	wire [63:0] Mid9, Mid10, Mid11, Mid12, Mid13, Mid14, Mid15, Mid16;
 	wire [63:0] Mid17, Mid18, Mid19, Mid20, Mid21, Mid22, Mid23, Mid24;
 	wire [63:0] InitXORVals0, InitXORVals1, InitXORVals2, InitXORVals3, InitXORVals4;
-	//wire [63:0] MainXORVals0, MainXORVals1, MainXORVals2, MainXORVals3, MainXORVals4;
 		
 	// Theta
 	assign InitXORVals0 = InState[`IDX64(0 + 0)] ^ InState[`IDX64(5 + 0)] ^ InState[`IDX64(10 + 0)] ^ InState[`IDX64(15 + 0)] ^ InState[`IDX64(20 + 0)];
@@ -239,13 +230,6 @@ module KeccakF1600Perm0(output wire [1599:0] OutState, input wire [1599:0] InSta
 	assign InitXORVals2 = InState[`IDX64(0 + 2)] ^ InState[`IDX64(5 + 2)] ^ InState[`IDX64(10 + 2)] ^ InState[`IDX64(15 + 2)] ^ InState[`IDX64(20 + 2)];
 	assign InitXORVals3 = InState[`IDX64(0 + 3)] ^ InState[`IDX64(5 + 3)] ^ InState[`IDX64(10 + 3)] ^ InState[`IDX64(15 + 3)] ^ InState[`IDX64(20 + 3)];
 	assign InitXORVals4 = InState[`IDX64(0 + 4)] ^ InState[`IDX64(5 + 4)] ^ InState[`IDX64(10 + 4)] ^ InState[`IDX64(15 + 4)] ^ InState[`IDX64(20 + 4)];
-
-	// Leads to suboptimal synthesis
-	//assign MainXORVals0 = InitXORVals0 ^ `ROTL64(InitXORVals2, 1);
-	//assign MainXORVals1 = InitXORVals1 ^ `ROTL64(InitXORVals3, 1);
-	//assign MainXORVals2 = InitXORVals2 ^ `ROTL64(InitXORVals4, 1);
-	//assign MainXORVals3 = InitXORVals3 ^ `ROTL64(InitXORVals0, 1);
-	//assign MainXORVals4 = InitXORVals4 ^ `ROTL64(InitXORVals1, 1);
 
 	assign Mid1 = InState[`IDX64(6)] ^ InitXORVals0 ^ `ROTL64(InitXORVals2, 1);
 	assign OutState[`IDX64(1)] = `ROTL64(Mid1, 44);

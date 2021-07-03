@@ -6,10 +6,6 @@
 
 `define SKEIN_KS_PARITY		64'h5555555555555555
 
-//`define COMBINATORIAL_KEY_INJ		1
-
-//`define QOR_PIPE_STAGE              1
-
 module SkeinInjectKey(output wire [1023:0] OutState, input wire clk, input wire [1023:0] State, input wire [1087:0] RotatedKey, input wire [191:0] Type);
 	parameter RNDNUM = 0;
 	parameter RNDNUM_MOD_3 = 0;
@@ -44,70 +40,6 @@ module SkeinInjectKey(output wire [1023:0] OutState, input wire clk, input wire 
 	end
 	
 endmodule
-
-`ifdef COMBINATORIAL_KEY_INJ
-
-module SkeinInjectKeyNexusBlk0(output wire [1023:0] OutState, input wire clk, input wire [1023:0] State, input wire [1087:0] RotatedKey);
-	parameter RNDNUM = 0;
-	parameter RNDNUM_MOD_3 = 0;
-
-	genvar x;
-
-	// Type[0] = 0xD8, Type[1] = 0xB000000000000000, Type[2] = 0xB0000000000000D8
-	for(x = 0; x < 13; x = x + 1)
-	begin : KEYADDLOOP
-		assign OutState[`IDX64(x)] = State[`IDX64(x)] + RotatedKey[`IDX64(x)];
-	end
-	
-	if(RNDNUM_MOD_3 == 0)
-	begin
-		assign OutState[`IDX64(13)] = State[`IDX64(13)] + RotatedKey[`IDX64(13)] + 8'hD8;
-		assign OutState[`IDX64(14)] = State[`IDX64(14)] + RotatedKey[`IDX64(14)] + 64'hB000000000000000;
-	end else if(RNDNUM_MOD_3 == 1)
-	begin
-		assign OutState[`IDX64(13)] = State[`IDX64(13)] + RotatedKey[`IDX64(13)] + 64'hB000000000000000;
-		assign OutState[`IDX64(14)] = State[`IDX64(14)] + RotatedKey[`IDX64(14)] + 64'hB0000000000000D8;
-	end else if(RNDNUM_MOD_3 == 2)
-	begin
-		assign OutState[`IDX64(13)] = State[`IDX64(13)] + RotatedKey[`IDX64(13)] + 64'hB0000000000000D8;
-		assign OutState[`IDX64(14)] = State[`IDX64(14)] + RotatedKey[`IDX64(14)] + 8'hD8;
-	end
-	
-	assign OutState[`IDX64(15)] = State[`IDX64(15)] + RotatedKey[`IDX64(15)] + RNDNUM;
-
-endmodule
-
-module SkeinInjectKeyNexusBlk1(output wire [1023:0] OutState, input wire clk, input wire [1023:0] State, input wire [1087:0] RotatedKey);
-	parameter RNDNUM = 0;
-	parameter RNDNUM_MOD_3 = 0;
-
-	genvar x;
-
-	// Type[0] = 0x08, Type[1] = 0xFF00000000000000, Type[2] = 0xFF00000000000008
-	for(x = 0; x < 13; x = x + 1)
-	begin : KEYADDLOOP
-		assign OutState[`IDX64(x)] = State[`IDX64(x)] + RotatedKey[`IDX64(x)];
-	end
-	
-	if(RNDNUM_MOD_3 == 0)
-	begin
-		assign OutState[`IDX64(13)] = State[`IDX64(13)] + RotatedKey[`IDX64(13)] + 8'h08;
-		assign OutState[`IDX64(14)] = State[`IDX64(14)] + RotatedKey[`IDX64(14)] + 64'hFF00000000000000;
-	end else if(RNDNUM_MOD_3 == 1)
-	begin
-		assign OutState[`IDX64(13)] = State[`IDX64(13)] + RotatedKey[`IDX64(13)] + 64'hFF00000000000000;
-		assign OutState[`IDX64(14)] = State[`IDX64(14)] + RotatedKey[`IDX64(14)] + 64'hFF00000000000008;
-	end else if(RNDNUM_MOD_3 == 2)
-	begin
-		assign OutState[`IDX64(13)] = State[`IDX64(13)] + RotatedKey[`IDX64(13)] + 64'hFF00000000000008;
-		assign OutState[`IDX64(14)] = State[`IDX64(14)] + RotatedKey[`IDX64(14)] + 8'h08;
-	end
-	
-	assign OutState[`IDX64(15)] = State[`IDX64(15)] + RotatedKey[`IDX64(15)] + RNDNUM;
-
-endmodule
-
-`else
 
 module SkeinInjectKeyNexusBlk0(output wire [1023:0] OutState, input wire clk, input wire [1023:0] State, input wire [1087:0] RotatedKey);
 	parameter RNDNUM = 0;
@@ -180,7 +112,6 @@ module SkeinInjectKeyNexusBlk1(output wire [1023:0] OutState, input wire clk, in
 	end
 	
 endmodule
-`endif
 
 /*
 #pragma unroll
@@ -224,21 +155,9 @@ module FirstSkeinRound(output wire [1087:0] OutState, input wire clk, input wire
 	parameter COREIDX = 0, HASHERS = 1;
 	
 	// Every Skein round has four clock cycles of latency, and every
-	// Skein key injection has 2 clock cycles of latency. If using the
-	// pipe stage for QoR, each Skein round has five clock cycles of latency.
-	// If using combinatorial key injections, each key stage has one cycle
-	// of latency.
-	`ifdef QOR_PIPE_STAGE
-	localparam SKEINRNDSTAGES = 5;
-	`else
+	// Skein key injection has 2 clock cycles of latency.
 	localparam SKEINRNDSTAGES = 4;
-	`endif
-	
-	`ifdef COMBINATORIAL_KEY_INJ
-	localparam SKEINKEYSTAGES = 1;
-	`else
 	localparam SKEINKEYSTAGES = 2;
-	`endif
 	
 	// 20 rounds, with 21 key injections per block process
 	localparam SKEINROUNDS = 20, SKEINKEYINJECTIONS = 21;
@@ -320,22 +239,10 @@ endmodule
 module SecondSkeinRound(output wire [1023:0] OutState, input wire clk, input wire [1087:0] InKey);
 
 	// Every Skein round has four clock cycles of latency, and every
-	// Skein key injection has 2 clock cycles of latency. If using the
-	// pipe stage for QoR, each Skein round has five clock cycles of latency.
-	// If using combinatorial key injections, each key stage has one cycle
-	// of latency.
-	`ifdef QOR_PIPE_STAGE
-	localparam SKEINRNDSTAGES = 5;
-	`else
+	// Skein key injection has 2 clock cycles of latency.
 	localparam SKEINRNDSTAGES = 4;
-	`endif
-	
-	`ifdef COMBINATORIAL_KEY_INJ
-	localparam SKEINKEYSTAGES = 1;
-	`else
 	localparam SKEINKEYSTAGES = 2;
-	`endif
-	
+		
 	// 20 rounds, with 21 key injections per block process
 	localparam SKEINROUNDS = 20, SKEINKEYINJECTIONS = 21;
 	
