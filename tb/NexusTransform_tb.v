@@ -5,8 +5,13 @@
 // Testbench for the Skein block process implementation
 module NexusTransform_tb;
 	// Every Skein round has four clock cycles of latency, and every
-	// Skein key injection has 2 clock cycles of latency
+	// Skein key injection has 2 clock cycles of latency. If using the
+	// pipe stage for QoR, each Skein round has five clock cycles of latency.
+	`ifdef QOR_PIPE_STAGE
+	localparam SKEINRNDSTAGES = 5, SKEINKEYSTAGES = 2;
+	`else
 	localparam SKEINRNDSTAGES = 4, SKEINKEYSTAGES = 2;
+	`endif
 	
 	// Every Keccak round has two clock cycles of latency,
 	// and there are 24 rounds
@@ -24,8 +29,9 @@ module NexusTransform_tb;
 	
 	// Nexus' SK1024 proof-of-work, SK1024 (after midstate, during which
 	// one Skein block process is done) consists of two Skein block processes
-	// and three Keccak block processes.
-	localparam TOTALSTAGES = (SKEINBLKSTAGES * 2) + (KECCAKBLKSTAGES * 3);	
+	// and three Keccak block processes. Add one to account for the extra
+	// XOR stage in the first Skein block. Add 2 more cause I missed stages.
+	localparam TOTALSTAGES = (SKEINBLKSTAGES * 2) + (KECCAKBLKSTAGES * 3) + 3;	
 		
 	genvar x;
 	
@@ -42,7 +48,7 @@ module NexusTransform_tb;
 	reg [1087:0] TestKey;
 	reg [63:0] FoundNonce, InNonce;
 	reg PassedFirstRnd = 1'b0, PassedSkein = 1'b0;
-	
+	reg [16:0] PipeStageCtr;
 	always #1 clk = ~clk;
 	wire ValidNonceFound;
 	
@@ -59,20 +65,24 @@ module NexusTransform_tb;
 		InNonce <= 64'h00000001FCAFC044;
 		
         #2;
-
-        // Release reset
+        // Zero the pipe stage counter and release reset on the same clk
+		PipeStageCtr <= 16'b0;
 		nHashRst <= 1'b1;
 		
     end
     
     always @(posedge clk)
 	begin
+		PipeStageCtr <= PipeStageCtr + 1'b1;
+		PipeOutputGood <= (PipeOutputGood << 1) | nHashRst;
+		
 		if(ValidNonceFound)
 		begin
 			$display("NEXUS FOUND NONCE 0x%h\n", FoundNonce);
-			$display("NEXUS PASS.");
+			$display("NEXUS PASS. YOUR PIPE IS %d STAGES.\n", PipeStageCtr);
 			$finish;
 		end
+		if(PipeOutputGood[TOTALSTAGES-1]) $display("NEXUS 0x%h.\n", FoundNonce);
 	end
 	
 	//module NexusHashTransform(output reg [63:0] NonceOut, output reg GoodNonceFound, input clk, input nHashRst, input [1727:0] WorkPkt, input [63:0] InNonce);

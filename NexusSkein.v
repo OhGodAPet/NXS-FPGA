@@ -6,6 +6,10 @@
 
 `define SKEIN_KS_PARITY		64'h5555555555555555
 
+//`define COMBINATORIAL_KEY_INJ		1
+
+//`define QOR_PIPE_STAGE              1
+
 module SkeinInjectKey(output wire [1023:0] OutState, input wire clk, input wire [1023:0] State, input wire [1087:0] RotatedKey, input wire [191:0] Type);
 	parameter RNDNUM = 0;
 	parameter RNDNUM_MOD_3 = 0;
@@ -40,9 +44,6 @@ module SkeinInjectKey(output wire [1023:0] OutState, input wire clk, input wire 
 	end
 	
 endmodule
-
-// If used, set KEYSTAGES to 1
-//`define COMBINATORIAL_KEY_INJ		1
 
 `ifdef COMBINATORIAL_KEY_INJ
 
@@ -213,7 +214,7 @@ for(int i = 0; i < 2; ++i)
 // The original data is copied, and a block process is done. The result of the block process is XOR'd with the original data.
 // The result of the XOR becomes the new key, with the last key 64-bit word being derived as usual with Skein.
 
-// To use, put state on the InState wires, with InKey and InType set as well.
+// To use, put state on the InState wires, with InKey set as well.
 // Bring nHashRst high, and it will accept input on these wires once per clock
 // as long as nHashRst remains held high.
 
@@ -223,8 +224,21 @@ module FirstSkeinRound(output wire [1087:0] OutState, input wire clk, input wire
 	parameter COREIDX = 0, HASHERS = 1;
 	
 	// Every Skein round has four clock cycles of latency, and every
-	// Skein key injection has 2 clock cycles of latency
-	localparam SKEINRNDSTAGES = 4, SKEINKEYSTAGES = 2;
+	// Skein key injection has 2 clock cycles of latency. If using the
+	// pipe stage for QoR, each Skein round has five clock cycles of latency.
+	// If using combinatorial key injections, each key stage has one cycle
+	// of latency.
+	`ifdef QOR_PIPE_STAGE
+	localparam SKEINRNDSTAGES = 5;
+	`else
+	localparam SKEINRNDSTAGES = 4;
+	`endif
+	
+	`ifdef COMBINATORIAL_KEY_INJ
+	localparam SKEINKEYSTAGES = 1;
+	`else
+	localparam SKEINKEYSTAGES = 2;
+	`endif
 	
 	// 20 rounds, with 21 key injections per block process
 	localparam SKEINROUNDS = 20, SKEINKEYINJECTIONS = 21;
@@ -235,11 +249,12 @@ module FirstSkeinRound(output wire [1087:0] OutState, input wire clk, input wire
 	
 	localparam STAGES = SKEINROUNDS + SKEINKEYINJECTIONS;
 	
+	// Add one extra for the register stage between the XORs!
 	localparam BLKSTAGES = (SKEINRNDSTAGES * SKEINROUNDS) + (SKEINKEYINJECTIONS * SKEINKEYSTAGES);
 	
 	// Type[0] = 0xD8, Type[1] = 0xB000000000000000, Type[2] = 0xB0000000000000D8
 	reg [63:0] CurNonce;
-	(* shreg_extract = "yes" *) reg [1023:0] IBuf[STAGES-1:0];
+	reg [1023:0] IBuf[STAGES-1:0];
 	reg [1023:0] OutXORBuf;
 	reg [1087:0] KeyBuf;
 	
@@ -301,11 +316,25 @@ module FirstSkeinRound(output wire [1087:0] OutState, input wire clk, input wire
 
 endmodule
 
+// Latency is 122 clock cycles. Throughput is one hash/clk.
 module SecondSkeinRound(output wire [1023:0] OutState, input wire clk, input wire [1087:0] InKey);
 
 	// Every Skein round has four clock cycles of latency, and every
-	// Skein key injection has 2 clock cycles of latency
-	localparam SKEINRNDSTAGES = 4, SKEINKEYSTAGES = 2;
+	// Skein key injection has 2 clock cycles of latency. If using the
+	// pipe stage for QoR, each Skein round has five clock cycles of latency.
+	// If using combinatorial key injections, each key stage has one cycle
+	// of latency.
+	`ifdef QOR_PIPE_STAGE
+	localparam SKEINRNDSTAGES = 5;
+	`else
+	localparam SKEINRNDSTAGES = 4;
+	`endif
+	
+	`ifdef COMBINATORIAL_KEY_INJ
+	localparam SKEINKEYSTAGES = 1;
+	`else
+	localparam SKEINKEYSTAGES = 2;
+	`endif
 	
 	// 20 rounds, with 21 key injections per block process
 	localparam SKEINROUNDS = 20, SKEINKEYINJECTIONS = 21;
@@ -320,8 +349,8 @@ module SecondSkeinRound(output wire [1023:0] OutState, input wire clk, input wir
 	localparam TOTALSTAGES = BLKSTAGES;
 		
 	// Type[0] = 0x08, Type[1] = 0xFF00000000000000, Type[2] = 0xFF00000000000008
-	(* shreg_extract = "yes" *) reg [1023:0] IBuf[STAGES-1:0];
-	(* shreg_extract = "yes" *) reg [1087:0] KeyBuf[BLKSTAGES-1:0];
+	reg [1023:0] IBuf[STAGES-1:0];
+	reg [1087:0] KeyBuf[BLKSTAGES-1:0];
 		
 	wire [1023:0] OBuf[STAGES-1:0];
 	assign OutState[1023:0] = OBuf[STAGES-1];

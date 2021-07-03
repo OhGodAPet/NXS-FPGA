@@ -11,10 +11,14 @@ module NexusKeccak1024(output wire [63:0] OutState, input wire clk, input wire [
 	parameter HASHERS = 1;
 	parameter COREIDX = 0;
 	
-	// Every "stage" is a Keccakf-1600 run. Now, in between
-	// stages 0 and 1, there will be an XOR pipe stage for
-	// mixing in the second round input. Therefore, total
-	// pipe stages for this module is STAGES * 3 + 1.
+	// Every round has two clock cycles of latency,
+	// and there are 24 rounds per block process.
+	localparam KECCAKRNDSTAGES = 2, KECCAKROUNDS = 24;
+	localparam KECCAKBLKSTAGES = KECCAKRNDSTAGES * KECCAKROUNDS;
+	
+	// Three block processes are needed; as such,
+	// the pipe stages for this module is given by
+	// KECCAKBLKSTAGES * 3, or 144 clock cycles.
 	localparam STAGES = 48, IDLE = 1'b0, MINING = 1'b1;
 	localparam TOTALSTAGES = (STAGES * 3);
 
@@ -26,25 +30,13 @@ module NexusKeccak1024(output wire [63:0] OutState, input wire clk, input wire [
 	wire [1599:0] OBuf[TOTALSTAGES-1:0];
 	wire Transform0Complete;
 	
-	//reg [TOTALSTAGES-1:0] PipeOutputGood = 0;
 	assign OutState = OBuf[TOTALSTAGES-1][`IDX64(6)];
-	//assign Done = PipeOutputGood[TOTALSTAGES-1];
 	integer x;
 	
 	always @(posedge clk)
 	begin
-		//if(~nHashRst)
-		//begin
-		//	CurWorkBlk <= InMidstate;
-		//	WorkExhausted <= 1'b0;
-		//	PipeOutputGood[STAGES-1:0] = 0;
-		//end
-		
 		IBuf[0] <= { 1024'b0, InState[575:0] };
 		SecondRoundInput[0] <= InState[1023:576];
-				
-		// As long as we have work (nonces to try), the stage has valid data
-		//PipeOutputGood <= (PipeOutputGood << 1) | nHashRst;
 		
 		// Cycle pipeline
 		for(x = 1; x < STAGES; x = x + 1)
