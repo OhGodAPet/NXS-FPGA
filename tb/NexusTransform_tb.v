@@ -2,15 +2,23 @@
 
 `define IDX64(x)            ((x) << 6)+:64
 
+//`define PIPED_MIX8			1
+//`define PIPED_KEY_INJ		1
+
 // Testbench for the Skein block process implementation
 module NexusTransform_tb;
 	// Every Skein round has four clock cycles of latency, and every
-	// Skein key injection has 2 clock cycles of latency. If using the
-	// pipe stage for QoR, each Skein round has five clock cycles of latency.
-	`ifdef QOR_PIPE_STAGE
-	localparam SKEINRNDSTAGES = 5, SKEINKEYSTAGES = 2;
+	// Skein key injection has 2 clock cycles of latency.
+	`ifdef PIPED_MIX8
+	localparam SKEINRNDSTAGES = 8;
 	`else
-	localparam SKEINRNDSTAGES = 4, SKEINKEYSTAGES = 2;
+	localparam SKEINRNDSTAGES = 4;
+	`endif
+	
+	`ifdef PIPED_KEY_INJ
+	localparam SKEINKEYSTAGES = 3;
+	`else
+	localparam SKEINKEYSTAGES = 2;
 	`endif
 	
 	// Every Keccak round has two clock cycles of latency,

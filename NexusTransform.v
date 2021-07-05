@@ -1,15 +1,26 @@
 `timescale 1ns / 1ps
 
 `define IDX64(x)            ((x) << 6)+:64
-
+//`define PIPED_KEY_INJ		1
+//`define PIPED_MIX8			1	
 module NexusHashTransform(output reg [63:0] NonceOut, output reg GoodNonceFound, input wire clk, input wire nHashRst, input wire [1727:0] WorkPkt, input wire [63:0] InNonce);
 	
 	parameter HASHERS = 1, COREIDX = 0;
 	
 	// Every Skein round has four clock cycles of latency, and every
 	// Skein key injection has 2 clock cycles of latency.
+	
+	`ifdef PIPED_MIX8
+	localparam SKEINRNDSTAGES = 8;
+	`else
 	localparam SKEINRNDSTAGES = 4;
+	`endif
+	
+	`ifdef PIPED_KEY_INJ
+	localparam SKEINKEYSTAGES = 3;
+	`else
 	localparam SKEINKEYSTAGES = 2;
+	`endif
 	
 	// Every Keccak round has two clock cycles of latency,
 	// and there are 24 rounds

@@ -5,6 +5,8 @@
 `define ROTR1088(x, y)		{x[(y) - 1 : 0], x[1087 : y]}
 
 `define SKEIN_KS_PARITY		64'h5555555555555555
+//`define PIPED_KEY_INJ		1
+//`define PIPED_MIX8			1
 
 module SkeinInjectKey(output wire [1023:0] OutState, input wire clk, input wire [1023:0] State, input wire [1087:0] RotatedKey, input wire [191:0] Type);
 	parameter RNDNUM = 0;
@@ -40,6 +42,87 @@ module SkeinInjectKey(output wire [1023:0] OutState, input wire clk, input wire 
 	end
 	
 endmodule
+
+module TripleAdd64_Piped(
+   input wire [63:0] A,
+   input wire [63:0] B,
+   input wire [63:0] C,
+   output wire [63:0] Q,
+   input wire clk
+);
+
+	reg [32:0] TmpResult;
+	//reg [63:0] TmpA, TmpB, TmpC;
+	reg [31:0] TmpA, TmpB, TmpC;
+	
+	assign Q[31:0] = TmpResult[31:0];
+	//assign Q[63:32] = TmpA[31:0] + TmpB[31:0] + TmpC[31:0] + TmpResult[32];
+	assign Q[63:32] = (TmpA ^ TmpB ^ TmpC) + ({(TmpA[30:0] & TmpB[30:0]) | (TmpA[30:0] & TmpC[30:0]) | (TmpB[30:0] & TmpC[30:0]), TmpResult[32]});
+	
+	always @(posedge clk)
+	begin
+		// Store A, B, and C
+		TmpA <= A[63:32];
+		TmpB <= B[63:32];
+		TmpC <= C[63:32];
+		TmpResult <= A[31:0] + B[31:0] + C[31:0];
+	end
+endmodule
+
+`ifdef PIPED_KEY_INJ
+
+module SkeinInjectKeyNexusBlk0(output reg [1023:0] OutState, input wire clk, input wire [1023:0] State, input wire [1087:0] RotatedKey);
+	parameter RNDNUM = 0;
+	parameter RNDNUM_MOD_3 = 0;
+	
+	genvar x;
+	
+	wire [1023:0] TmpState;
+	
+	//assign OutState = TmpState;
+	
+	// All adds are done combinatorially, then the results are pushed
+	// to the output regs on the posedge of the clk.
+	for(x = 0; x < 13; x = x + 1)
+	begin : KEYADDLOOP
+		//TmpState[`IDX64(x)] <= State[`IDX64(x)] + RotatedKey[`IDX64(x)];
+		TripleAdd64_Piped MuhAdd0(State[`IDX64(x)], RotatedKey[`IDX64(x)], 64'b0, TmpState[`IDX64(x)], clk);
+	end
+	
+	if(RNDNUM_MOD_3 == 0)
+	begin
+		//TmpState[`IDX64(13)] <= State[`IDX64(13)] + RotatedKey[`IDX64(13)] + 8'hD8;
+		TripleAdd64_Piped MuhAdd1(State[`IDX64(13)], RotatedKey[`IDX64(13)], 64'hD8, TmpState[`IDX64(13)], clk);
+		//TmpState[`IDX64(14)] <= State[`IDX64(14)] + RotatedKey[`IDX64(14)] + 64'hB000000000000000;
+		TripleAdd64_Piped MuhAdd2(State[`IDX64(14)], RotatedKey[`IDX64(14)], 64'hB000000000000000, TmpState[`IDX64(14)], clk);
+		end else if(RNDNUM_MOD_3 == 1)
+		begin
+			//TmpState[`IDX64(13)] <= State[`IDX64(13)] + RotatedKey[`IDX64(13)] + 64'hB000000000000000;
+			TripleAdd64_Piped MuhAdd3(State[`IDX64(13)], RotatedKey[`IDX64(13)], 64'hB000000000000000, TmpState[`IDX64(13)], clk);
+			//TmpState[`IDX64(14)] <= State[`IDX64(14)] + RotatedKey[`IDX64(14)] + 64'hB0000000000000D8;
+			TripleAdd64_Piped MuhAdd4(State[`IDX64(14)], RotatedKey[`IDX64(14)], 64'hB0000000000000D8, TmpState[`IDX64(14)], clk);
+		end else if(RNDNUM_MOD_3 == 2)
+		begin
+			//TmpState[`IDX64(13)] <= State[`IDX64(13)] + RotatedKey[`IDX64(13)] + 64'hB0000000000000D8;
+			TripleAdd64_Piped MuhAdd3(State[`IDX64(13)], RotatedKey[`IDX64(13)], 64'hB0000000000000D8, TmpState[`IDX64(13)], clk);
+			//TmpState[`IDX64(14)] <= State[`IDX64(14)] + RotatedKey[`IDX64(14)] + 8'hD8;
+			TripleAdd64_Piped MuhAdd4(State[`IDX64(14)], RotatedKey[`IDX64(14)], 64'hD8, TmpState[`IDX64(14)], clk);
+		end
+
+		//TmpState[`IDX64(15)] <= State[`IDX64(15)] + RotatedKey[`IDX64(15)] + RNDNUM;
+		TripleAdd64_Piped MuhAdd5(State[`IDX64(15)], RotatedKey[`IDX64(15)], RNDNUM, TmpState[`IDX64(15)], clk);
+	
+	// Type[0] = 0xD8, Type[1] = 0xB000000000000000, Type[2] = 0xB0000000000000D8
+	always @(posedge clk)
+	begin
+		
+    OutState <= TmpState;
+		
+	end
+	
+endmodule
+
+`else
 
 module SkeinInjectKeyNexusBlk0(output wire [1023:0] OutState, input wire clk, input wire [1023:0] State, input wire [1087:0] RotatedKey);
 	parameter RNDNUM = 0;
@@ -77,6 +160,63 @@ module SkeinInjectKeyNexusBlk0(output wire [1023:0] OutState, input wire clk, in
 	
 endmodule
 
+`endif
+
+`ifdef PIPED_KEY_INJ
+
+module SkeinInjectKeyNexusBlk1(output reg [1023:0] OutState, input wire clk, input wire [1023:0] State, input wire [1087:0] RotatedKey);
+	parameter RNDNUM = 0;
+	parameter RNDNUM_MOD_3 = 0;
+	
+	genvar x;
+	
+	wire [1023:0] TmpState;
+	
+	//assign OutState = TmpState;
+	
+	// All adds are done combinatorially, then the results are pushed
+	// to the output regs on the posedge of the clk.
+	for(x = 0; x < 13; x = x + 1)
+	begin : KEYADDLOOP
+		//TmpState[`IDX64(x)] <= State[`IDX64(x)] + RotatedKey[`IDX64(x)];
+		TripleAdd64_Piped MuhAdd0(State[`IDX64(x)], RotatedKey[`IDX64(x)], 64'b0, TmpState[`IDX64(x)], clk);
+	end
+	
+	if(RNDNUM_MOD_3 == 0)
+	begin
+		//TmpState[`IDX64(13)] <= State[`IDX64(13)] + RotatedKey[`IDX64(13)] + 8'h08;
+		TripleAdd64_Piped MuhAdd1(State[`IDX64(13)], RotatedKey[`IDX64(13)], 64'h08, TmpState[`IDX64(13)], clk);
+		//TmpState[`IDX64(14)] <= State[`IDX64(14)] + RotatedKey[`IDX64(14)] + 64'hFF00000000000000;
+		TripleAdd64_Piped MuhAdd2(State[`IDX64(14)], RotatedKey[`IDX64(14)], 64'hFF00000000000000, TmpState[`IDX64(14)], clk);
+		end else if(RNDNUM_MOD_3 == 1)
+		begin
+			//TmpState[`IDX64(13)] <= State[`IDX64(13)] + RotatedKey[`IDX64(13)] + 64'hFF00000000000000;
+			TripleAdd64_Piped MuhAdd3(State[`IDX64(13)], RotatedKey[`IDX64(13)], 64'hFF00000000000000, TmpState[`IDX64(13)], clk);
+			//TmpState[`IDX64(14)] <= State[`IDX64(14)] + RotatedKey[`IDX64(14)] + 64'hFF00000000000008;
+			TripleAdd64_Piped MuhAdd4(State[`IDX64(14)], RotatedKey[`IDX64(14)], 64'hFF00000000000008, TmpState[`IDX64(14)], clk);
+		end else if(RNDNUM_MOD_3 == 2)
+		begin
+			//TmpState[`IDX64(13)] <= State[`IDX64(13)] + RotatedKey[`IDX64(13)] + 64'hFF00000000000008;
+			TripleAdd64_Piped MuhAdd3(State[`IDX64(13)], RotatedKey[`IDX64(13)], 64'hFF00000000000008, TmpState[`IDX64(13)], clk);
+			//TmpState[`IDX64(14)] <= State[`IDX64(14)] + RotatedKey[`IDX64(14)] + 8'h08;
+			TripleAdd64_Piped MuhAdd4(State[`IDX64(14)], RotatedKey[`IDX64(14)], 64'h08, TmpState[`IDX64(14)], clk);
+		end
+
+		//TmpState[`IDX64(15)] <= State[`IDX64(15)] + RotatedKey[`IDX64(15)] + RNDNUM;
+		TripleAdd64_Piped MuhAdd5(State[`IDX64(15)], RotatedKey[`IDX64(15)], RNDNUM, TmpState[`IDX64(15)], clk);
+	
+	// Type[0] = 0x08, Type[1] = 0xFF00000000000000, Type[2] = 0xFF00000000000008
+	always @(posedge clk)
+	begin
+		
+    OutState <= TmpState;
+		
+	end
+	
+endmodule
+
+`else
+
 module SkeinInjectKeyNexusBlk1(output wire [1023:0] OutState, input wire clk, input wire [1023:0] State, input wire [1087:0] RotatedKey);
 	parameter RNDNUM = 0;
 	parameter RNDNUM_MOD_3 = 0;
@@ -112,6 +252,8 @@ module SkeinInjectKeyNexusBlk1(output wire [1023:0] OutState, input wire clk, in
 	end
 	
 endmodule
+
+`endif
 
 /*
 #pragma unroll
@@ -156,8 +298,17 @@ module FirstSkeinRound(output wire [1087:0] OutState, input wire clk, input wire
 	
 	// Every Skein round has four clock cycles of latency, and every
 	// Skein key injection has 2 clock cycles of latency.
+	`ifdef PIPED_MIX8
+	localparam SKEINRNDSTAGES = 8;
+	`else
 	localparam SKEINRNDSTAGES = 4;
+	`endif
+	
+	`ifdef PIPED_KEY_INJ
+	localparam SKEINKEYSTAGES = 3;
+	`else
 	localparam SKEINKEYSTAGES = 2;
+	`endif
 	
 	// 20 rounds, with 21 key injections per block process
 	localparam SKEINROUNDS = 20, SKEINKEYINJECTIONS = 21;
@@ -240,9 +391,18 @@ module SecondSkeinRound(output wire [1023:0] OutState, input wire clk, input wir
 
 	// Every Skein round has four clock cycles of latency, and every
 	// Skein key injection has 2 clock cycles of latency.
+	`ifdef PIPED_MIX8
+	localparam SKEINRNDSTAGES = 8;
+	`else
 	localparam SKEINRNDSTAGES = 4;
+	`endif
+	
+	`ifdef PIPED_KEY_INJ
+	localparam SKEINKEYSTAGES = 3;
+	`else
 	localparam SKEINKEYSTAGES = 2;
-		
+	`endif
+	
 	// 20 rounds, with 21 key injections per block process
 	localparam SKEINROUNDS = 20, SKEINKEYINJECTIONS = 21;
 	
