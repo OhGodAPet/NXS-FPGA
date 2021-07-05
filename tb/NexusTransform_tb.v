@@ -39,7 +39,7 @@ module NexusTransform_tb;
 	// one Skein block process is done) consists of two Skein block processes
 	// and three Keccak block processes. Add one to account for the extra
 	// XOR stage in the first Skein block. Add 2 more cause I missed stages.
-	localparam TOTALSTAGES = (SKEINBLKSTAGES * 2) + (KECCAKBLKSTAGES * 3) + 3;	
+	localparam TOTALSTAGES = (SKEINBLKSTAGES * 2) + (KECCAKBLKSTAGES * 3) + 3;
 		
 	genvar x;
 	
@@ -66,13 +66,13 @@ module NexusTransform_tb;
 		$dumpfile("SimOutput.lxt2");
 		$dumpvars(0, NexusTransform_tb);
 		
-		#2;
-		
         // Initialize input
-		TestWorkPkt <= { Midstate, BlkHdrTail[639:0] };
+        // TestWorkPkt <= { Midstate, BlkHdrTail[639:0] };				// Old formatting
+		TestWorkPkt <= { BlkHdrTail[639:0], Midstate };
 		InNonce <= 64'h00000001FCAFC044;
 		
-        #2;
+		#2;
+		
         // Zero the pipe stage counter and release reset on the same clk
 		PipeStageCtr <= 16'b0;
 		nHashRst <= 1'b1;

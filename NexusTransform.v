@@ -61,8 +61,15 @@ module NexusHashTransform(output reg [63:0] NonceOut, output reg GoodNonceFound,
 		if(~nHashRst)
 		begin
 			PipeOutputGood <= 0;
-			BlkHdrTail <= WorkPkt[639:0];
-			Midstate <= WorkPkt[1727:640];
+			
+			// Old formatting
+			//BlkHdrTail <= WorkPkt[639:0];
+			//Midstate <= WorkPkt[1727:640];
+			
+			// New formatting
+			Midstate <= WorkPkt[1087:0];
+			BlkHdrTail <= WorkPkt[1727:1088];
+			
 			CurNonce <= InNonce + COREIDX;
 		end else
 		begin
