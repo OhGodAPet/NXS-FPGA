@@ -748,8 +748,8 @@ uint64_t DoNXSTest(const uint64_t *State, const uint64_t *InKey, uint64_t Nonce)
 #pragma pack(push, 1)
 typedef struct FPGAWorkPacket_s
 {
-	uint64_t BlkHdrTail[10];
 	uint64_t Midstate[17];
+	uint64_t BlkHdrTail[11];
 } FPGAWorkPacket;
 #pragma pack(pop)
 
@@ -805,7 +805,7 @@ int main(int argc, char **argv)
 	}
 	
 	memcpy(State, NXSTestHeader, 216);
-	
+	printf("sizeof(FPGAWorkPacket) == %d\n", sizeof(FPGAWorkPacket));
 	printf("Block:\n");
 	DumpQwords(NXSTestHeader, 216 / 8);
 	
@@ -822,8 +822,12 @@ int main(int argc, char **argv)
 	for(int i = 16; i < 26; ++i)
 		Pkt.BlkHdrTail[i - 16] = ((uint64_t *)State)[i];
 	
+	// Nonce
+	//Pkt.BlkHdrTail[10] = 0x00ULL;
+	Pkt.BlkHdrTail[10] = 0x48494E4450415753ULL;
+	//Pkt.BlkHdrTail[10] = 0x012345678ABCDEFULL;
 	printf("BlkHdrTail:\n");
-	DumpVerilogStyle(Pkt.BlkHdrTail, 80);
+	DumpVerilogStyle(Pkt.BlkHdrTail, 88);
 	
 	for(int i = 0; i < 17; ++i)
 		Pkt.Midstate[i] = ((uint64_t *)Key)[i];

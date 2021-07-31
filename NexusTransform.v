@@ -40,7 +40,7 @@ module NexusHashTransform(output reg [63:0] NonceOut, output reg GoodNonceFound,
 	// one Skein block process is done) consists of two Skein block processes
 	// and three Keccak block processes. Add one to account for the extra
 	// XOR stage in the first Skein block. Add 1 more cause I lost a pipe stage.
-	localparam TOTALSTAGES = (SKEINBLKSTAGES * 2) + (KECCAKBLKSTAGES * 3) + 2;
+	localparam TOTALSTAGES = (SKEINBLKSTAGES * 2) + (KECCAKBLKSTAGES * 3) + 3;
 		
 	genvar x;
 		
@@ -49,7 +49,7 @@ module NexusHashTransform(output reg [63:0] NonceOut, output reg GoodNonceFound,
 	reg [639:0] BlkHdrTail;
 	reg [1087:0] Midstate;
 	reg [63:0] CurNonce;
-		
+	reg [63:0] NextNonce;
 	wire [1087:0] SkeinOutput0;
 	wire [1023:0] SkeinOutput1;
 	wire [63:0] KeccakOutputQword;
@@ -69,11 +69,12 @@ module NexusHashTransform(output reg [63:0] NonceOut, output reg GoodNonceFound,
 			// New formatting
 			Midstate <= WorkPkt[1087:0];
 			BlkHdrTail <= WorkPkt[1727:1088];
-			
 			CurNonce <= InNonce + COREIDX;
+			NextNonce <= InNonce + COREIDX;
 		end else
 		begin
-			CurNonce <= CurNonce + HASHERS;
+	       CurNonce <= NextNonce;
+	       NextNonce <= NextNonce + HASHERS;
 		end
 		
 		PipeOutputGood <= (PipeOutputGood << 1) | nHashRst;
@@ -81,10 +82,10 @@ module NexusHashTransform(output reg [63:0] NonceOut, output reg GoodNonceFound,
 		// Lazy target check - check for 32 bits of zero, and filter further
 		// on the miner side; I am cheap and dirty
 		GoodNonceFound <= PipeOutputGood[TOTALSTAGES-1] & (KeccakOutputQword[63:32] == 32'b0);
-		NonceOut <= CurNonce - TOTALSTAGES;
+		NonceOut <= CurNonce - (((TOTALSTAGES-1) * HASHERS));
 	end
 	
-	FirstSkeinRound Block1ProcessTest(SkeinOutput0, clk, BlkHdrTail[639:0], Midstate, CurNonce);
+	FirstSkeinRound #(.HASHERS(HASHERS), .COREIDX(COREIDX)) Block1ProcessTest(SkeinOutput0, clk, BlkHdrTail[639:0], Midstate, CurNonce);
 	SecondSkeinRound Block2ProcessTest(SkeinOutput1, clk, SkeinOutput0);
 	NexusKeccak1024 KeccakProcessTest(KeccakOutputQword, clk, SkeinOutput1);
 endmodule

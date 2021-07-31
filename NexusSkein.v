@@ -326,7 +326,8 @@ module FirstSkeinRound(output wire [1087:0] OutState, input wire clk, input wire
 	reg [63:0] CurNonce;
 	reg [1023:0] IBuf[STAGES-1:0];
 	reg [1023:0] OutXORBuf;
-	reg [1087:0] KeyBuf;
+	// This doesn't NEED to be piped... but it is better for timing
+	reg [1087:0] KeyBuf[SKEINKEYINJECTIONS-1:0];
 	
 	wire [1023:0] OBuf[STAGES-1:0];
 	assign OutState[1023:0] = OutXORBuf;
@@ -337,15 +338,22 @@ module FirstSkeinRound(output wire [1087:0] OutState, input wire clk, input wire
 	always @(posedge clk)
 	begin
 		IBuf[0] <= { 320'b0, CurNonce, InState };
-		KeyBuf <= InKey;
+		KeyBuf[0] <= InKey;
 		CurNonce <= InNonce;
+		
+		for(i = 1; i < SKEINKEYINJECTIONS; i = i + 1)
+		begin : KEYCYCLELOOP
+			KeyBuf[i] <= KeyBuf[i - 1];
+		end
+
 		
 		for(i = 1; i < STAGES; i = i + 1)
 		begin : PIPECYCLELOOP
 			IBuf[i] <= OBuf[i - 1];
 		end		
 		
-		OutXORBuf <= OBuf[STAGES-1] ^ { 320'b0, CurNonce - ((BLKSTAGES * HASHERS) + COREIDX), InState };
+		//$display("Skein: (BLKSTAGES * HASHERS) + COREIDX = %d\n", (BLKSTAGES * HASHERS) + COREIDX);
+		OutXORBuf <= OBuf[STAGES-1] ^ { 320'b0, CurNonce - ((BLKSTAGES * HASHERS)), InState };
 	end
 
 	// Due to ROTR1088 not being truly circular, values greater than 16
@@ -353,7 +361,7 @@ module FirstSkeinRound(output wire [1087:0] OutState, input wire clk, input wire
 	// round and the final four rounds (as well as the final key
 	// injection) are removed from the loop and placed outside it.
 	
-	SkeinInjectKeyNexusBlk0 #(.RNDNUM(0), .RNDNUM_MOD_3(0)) FirstKeyInjection(OBuf[0], clk, IBuf[0], KeyBuf);
+	SkeinInjectKeyNexusBlk0 #(.RNDNUM(0), .RNDNUM_MOD_3(0)) FirstKeyInjection(OBuf[0], clk, IBuf[0], KeyBuf[0]);
 	SkeinEvenRound FirstRound(OBuf[1], clk, IBuf[1]);
 	
 	// Loop for all rounds from 1 - 17, skipping 0, 18, and 19.
@@ -361,7 +369,7 @@ module FirstSkeinRound(output wire [1087:0] OutState, input wire clk, input wire
 	begin : MAINRNDINSTANTIATIONLOOP0
 		// A shift up by six is done to multiply the rotation constant by 64 before use.
 		// Note that the mod is done on a synthesis time constant which will be optimized out.
-		SkeinInjectKeyNexusBlk0 #(.RNDNUM(x), .RNDNUM_MOD_3(x % 3)) KeyInjection(OBuf[x << 1], clk, IBuf[x << 1], `ROTR1088(KeyBuf, x << 6));
+		SkeinInjectKeyNexusBlk0 #(.RNDNUM(x), .RNDNUM_MOD_3(x % 3)) KeyInjection(OBuf[x << 1], clk, IBuf[x << 1], `ROTR1088(KeyBuf[x], x << 6));
 			
 		if(x & 1)
 		begin
@@ -373,16 +381,16 @@ module FirstSkeinRound(output wire [1087:0] OutState, input wire clk, input wire
 	end
 	
 	// Key rotation for this round is a no-op.
-	SkeinInjectKeyNexusBlk0 #(.RNDNUM(17), .RNDNUM_MOD_3(2)) KeyInjection17(OBuf[34], clk, IBuf[34], KeyBuf);
+	SkeinInjectKeyNexusBlk0 #(.RNDNUM(17), .RNDNUM_MOD_3(2)) KeyInjection17(OBuf[34], clk, IBuf[34], KeyBuf[17]);
 	SkeinOddRound OddRound17(OBuf[35], clk, IBuf[35]);
 	
-	SkeinInjectKeyNexusBlk0 #(.RNDNUM(18), .RNDNUM_MOD_3(0)) KeyInjection18(OBuf[36], clk, IBuf[36], `ROTR1088(KeyBuf, 64));
+	SkeinInjectKeyNexusBlk0 #(.RNDNUM(18), .RNDNUM_MOD_3(0)) KeyInjection18(OBuf[36], clk, IBuf[36], `ROTR1088(KeyBuf[18], 64));
 	SkeinEvenRound EvenRound18(OBuf[37], clk, IBuf[37]);
 
-	SkeinInjectKeyNexusBlk0 #(.RNDNUM(19), .RNDNUM_MOD_3(1)) KeyInjection19(OBuf[38], clk, IBuf[38], `ROTR1088(KeyBuf, 128));
+	SkeinInjectKeyNexusBlk0 #(.RNDNUM(19), .RNDNUM_MOD_3(1)) KeyInjection19(OBuf[38], clk, IBuf[38], `ROTR1088(KeyBuf[19], 128));
 	SkeinOddRound OddRound19(OBuf[39], clk, IBuf[39]);
 	
-	SkeinInjectKeyNexusBlk0 #(.RNDNUM(20), .RNDNUM_MOD_3(2)) KeyInjection20(OBuf[40], clk, IBuf[40], `ROTR1088(KeyBuf, 192));
+	SkeinInjectKeyNexusBlk0 #(.RNDNUM(20), .RNDNUM_MOD_3(2)) KeyInjection20(OBuf[40], clk, IBuf[40], `ROTR1088(KeyBuf[20], 192));
 
 endmodule
 

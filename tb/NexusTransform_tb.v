@@ -54,11 +54,12 @@ module NexusTransform_tb;
 	reg [1727:0] TestWorkPkt;
 	reg [1023:0] TestInput;
 	reg [1087:0] TestKey;
-	reg [63:0] FoundNonce, InNonce;
+	reg [63:0] InNonce;
+	wire [63:0] FoundNonce[2];
 	reg PassedFirstRnd = 1'b0, PassedSkein = 1'b0;
 	reg [16:0] PipeStageCtr;
 	always #1 clk = ~clk;
-	wire ValidNonceFound;
+	wire ValidNonceFound[2];
 	
     initial
 	begin
@@ -69,13 +70,15 @@ module NexusTransform_tb;
         // Initialize input
         // TestWorkPkt <= { Midstate, BlkHdrTail[639:0] };				// Old formatting
 		TestWorkPkt <= { BlkHdrTail[639:0], Midstate };
-		InNonce <= 64'h00000001FCAFC044;
+		InNonce <= 64'h00000001FCAFC041;
 		
 		#2;
 		
         // Zero the pipe stage counter and release reset on the same clk
 		PipeStageCtr <= 16'b0;
 		nHashRst <= 1'b1;
+		
+		$display("TOTALSTAGES = %d\n", TOTALSTAGES);
 		
     end
     
@@ -84,15 +87,25 @@ module NexusTransform_tb;
 		PipeStageCtr <= PipeStageCtr + 1'b1;
 		PipeOutputGood <= (PipeOutputGood << 1) | nHashRst;
 		
-		if(ValidNonceFound)
+		if(ValidNonceFound[0])
 		begin
-			$display("NEXUS FOUND NONCE 0x%h\n", FoundNonce);
+			$display("NEXUS FOUND NONCE 0x%h\n", FoundNonce[0]);
 			$display("NEXUS PASS. YOUR PIPE IS %d STAGES.\n", PipeStageCtr);
 			$finish;
 		end
-		if(PipeOutputGood[TOTALSTAGES-1]) $display("NEXUS 0x%h.\n", FoundNonce);
+		
+		if(ValidNonceFound[1])
+		begin
+			$display("NEXUS FOUND NONCE 0x%h\n", FoundNonce[1]);
+			$display("NEXUS PASS. YOUR PIPE IS %d STAGES.\n", PipeStageCtr);
+			$finish;
+		end
+		
+		if(PipeOutputGood[TOTALSTAGES-1]) $display("NEXUS 0x%h / 0x%h.\n", FoundNonce[0], FoundNonce[1]);
 	end
 	
 	//module NexusHashTransform(output reg [63:0] NonceOut, output reg GoodNonceFound, input clk, input nHashRst, input [1727:0] WorkPkt, input [63:0] InNonce);
-	NexusHashTransform #(.HASHERS(1), .COREIDX(0)) NexusCore(FoundNonce, ValidNonceFound, clk, nHashRst, TestWorkPkt, InNonce);
+	//NexusHashTransform #(.HASHERS(2), .COREIDX(0)) NexusEng0(FoundNonce[0], ValidNonceFound[0], clk, nHashRst, TestWorkPkt, InNonce);
+	NexusHashTransform #(.HASHERS(2), .COREIDX(0)) NexusEng0(FoundNonce[0], ValidNonceFound[0], clk, nHashRst, TestWorkPkt, InNonce);
+	NexusHashTransform #(.HASHERS(2), .COREIDX(1)) NexusEng1(FoundNonce[1], ValidNonceFound[1], clk, nHashRst, TestWorkPkt, InNonce);
 endmodule
